@@ -1,0 +1,1849 @@
+---
+title: "Music EDX Capstone Project Report"
+author: "MM"
+date: "27/02/2022"
+output: 
+ 
+  pdf_document: 
+    latex_engine: lualatex
+    toc: yes
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r loading_to_knit_env, include=FALSE}
+#this codes run in the background to upload the last saved image of the environment built with the associated R script for this project
+set.seed(1, sample.kind="Rounding")
+load(".RData")
+library(tidyverse)
+library(stringr)
+library(purrr)
+library(skimr)
+library(caret)
+library(data.table)
+library(DataExplorer)
+library(randomForest)
+library(corrplot)
+library(knitr)
+library(factoextra)
+library(Boruta)
+library(rpart) 
+library(rpart.plot)
+library(packcircles)
+library(viridis)
+library(caretEnsemble)
+```
+
+## INTRODUCTION
+
+This is a report for the capstone project required to obtain the  Data Science Professional Certification issued by Harvard University, via EDX platform.
+
+Measurement of a song's success is a relative matter. It could be assessed based on volume of sales, how popular it might be or from a purely artistic point of view regarding its aesthetics and characteristics.
+
+For this project, I have defined as a measure of song success: whether a song  was listed in the Billboard Hot 100 chart, and therefore classified as a "hit".  
+
+I obtained and combined relevant data to predict whether a song can become a "hit" based on its audio features. 
+
+This analysis does not account for other possible confounding factors, such as marketing, performer abilities and trajectory, social or geographical environment, among others factors that could have a direct influence on a song becoming a hit.
+
+This project was of particular interest to me. Among my hobbies, I like to compose, record music and play various instruments. This analysis helped me understanding better the characteristics of successful songs. 
+
+### Libraries
+The following libraries are required for proper execution of the related R script file:
+```{r libraries,  eval=F, echo=T}
+
+library(tidyverse)
+library(stringr)
+library(spotifyr)
+library(purrr)
+library(skimr)
+library(caret)
+library(DataExplorer)
+library(corrplot)
+library(hrbrthemes)
+library(factoextra)
+library(Boruta)
+library(rpart) 
+library(rpart.plot) 
+library(packcircles)
+library(viridis)
+library(caretEnsemble)
+```
+
+### Data Wrangling
+
+I have obtained the following data sets:
+
+* **Hot 100 Billboard songs**  [see link](https://data.world/kcmillersean/billboard-hot-100-1958-2017): This is a compilation of all songs that made the top 100's in the billboard charts between 1957 and 2017. I used the file called  "Hot 100 Audio Features.csv" to gather songs that were defined as a "hit" for the purpose of this project.
+
+*  **Dataset of songs in Spotify** [see link](https://www.kaggle.com/mrmorj/dataset-of-songs-in-spotify) :  I used the file called "genres_v2.csv" to obtain audio feature data for songs that were not included in the  hot 100 billboard songs dataset, (hence a "non-hit" for the purpose of this project).
+
+I performed data wrangling operations to combine these datasets as follows:
+
+* removing rows in genres_v2 missing song name 
+* removing rows in Hot_100_Audio_Features  missing genre
+* renaming columns as appropriate
+* defining a class field for non_hits in genres_v2 (set as 0, and labeled as "No")
+* defining a class field for hits in hot_100 (set as 1, and labeled as "Yes")
+* dropping  non-useful columns
+* defining the order of columns selected for the final dataset
+* sub-setting songs from genres_v2 that were not in Hot_100_features (object name: genres_v2_no_hits)
+* genres_v2 file did not include performer data. I obtained a sample of performers' names of  non-hit songs for context, by connecting to Spotify via its Web API (sample size was 210 due to Spotify download limitations)
+* trimming the datasets to keep unique records for each track
+* excluding rows with no features from hot_100 data
+* Combining the genres_v2_no_hits and hot_100_features sets into a single dataset (object name: "Dataset"), while ensuring that classes remained balanced (same amount of songs from each dataset)
+* created a new field in Dataset for a cleansed genre variable
+* checking completeness of the new Dataset
+
+The following code was used to perform the above mentioned data loading and wrangling operations:
+
+```{r data_loading, eval=F, echo=T}
+#####DATA LOADING####
+#loading the data
+Hot_100_Audio_Features <- read.csv("~/Hot 100 Audio Features.csv")
+genres_v2 <- read.csv("~/genres_v2.csv")
+
+##view the columns available
+names(Hot_100_Audio_Features)
+names(genres_v2)
+
+##checking which columns are not in both datasets
+
+setdiff(colnames(Hot_100_Audio_Features), colnames(genres_v2))
+
+setdiff( colnames(genres_v2),colnames(Hot_100_Audio_Features))
+
+##checking unique records per dataset
+
+length(unique(Hot_100_Audio_Features$spotify_track_id))
+length(unique(genres_v2$id))
+
+##checking column classes
+a<- lapply(Hot_100_Audio_Features, class)
+b<-lapply(genres_v2, class)
+str(Hot_100_Audio_Features)
+
+#exploring NA's
+Hot_100_Audio_Features %>% filter(is.na(SongID)== TRUE) %>% count()
+Hot_100_Audio_Features %>% filter(is.na(Song)== TRUE) %>% count()
+Hot_100_Audio_Features %>% filter(is.na(spotify_track_id)== TRUE) %>% count()
+Hot_100_Audio_Features[(Hot_100_Audio_Features$Song==""),] %>% count()
+Hot_100_Audio_Features[(Hot_100_Audio_Features$spotify_genre==""),]  %>% count()
+Hot_100_Audio_Features[(is.na(Hot_100_Audio_Features$spotify_genre)== TRUE),]  %>% count()
+Hot_100_Audio_Features[(Hot_100_Audio_Features$spotify_genre == "[]"),]  %>% count()
+
+genres_v2 %>% filter(is.na(id ==TRUE)) %>% count()
+genres_v2 %>% filter(is.na(song_name ==TRUE)) %>% count()
+genres_v2[(genres_v2$song_name==""),]  %>% count()
+genres_v2[(genres_v2$genre== "[]"),]  %>% count()
+
+######DATA WRANGLING########
+#removing rows in genres_v2 missing song name
+genres_v2 <- genres_v2[!(genres_v2$song_name==""),] 
+
+#removing rows in Hot_100_Audio_Features  missing genre
+Hot_100_Audio_Features <- Hot_100_Audio_Features[!(Hot_100_Audio_Features$spotify_genre==""),] 
+Hot_100_Audio_Features <- Hot_100_Audio_Features[(Hot_100_Audio_Features$spotify_genre != "[]"),] 
+
+#renaming columns
+genres_v2 <- genres_v2 %>%   rename(., track_id = id )
+Hot_100_Audio_Features <- Hot_100_Audio_Features %>%   
+  rename(., track_id = spotify_track_id, song_name = Song, genre = spotify_genre,
+         duration_ms = spotify_track_duration_ms)
+
+#defining class field
+genres_v2$Is_hit <- 0 #means No hit
+Hot_100_Audio_Features$Is_hit <- 1  # means Yes, it's a hit
+
+#columns to drop 
+#Hot_100_Audio_Features:
+exclude_Hot <- c("spotify_track_album", "SongID", "spotify_track_preview_url",
+                 "spotify_track_explicit","spotify_track_popularity")
+
+#genres_v2
+exclude_genr <- c("type","uri","track_href", "analysis_url", "Unnamed..0" , "title")
+
+#defining columns wanted in specific order
+
+valid_fields <- c("track_id", "song_name", "Is_hit", "genre", "key", "mode", "tempo", 
+"danceability", "energy", "loudness", "speechiness", "acousticness",
+"instrumentalness", "liveness", "valence","duration_ms",  "time_signature", "Performer")              
+
+#identifying the songs from genres_v2 that are not in Hot_100 (i.e. true no hits)
+
+genres_v2_no_hits <- subset(genres_v2 ,!(track_id%in%Hot_100_Audio_Features$track_id))
+
+####OBTAINING SAMPLE OF PERFORMERS NAMES OF NON-HIT SONGS FOR CONTEXT###
+
+#creating authentication
+Sys.setenv(SPOTIFY_CLIENT_ID = Client_Id)  # client id not shared here for security
+Sys.setenv(SPOTIFY_CLIENT_SECRET = Client_secret) #client secret not shared here for security
+
+#defining a function to obtain artists names
+spotify_filter_artist_id_func <- function(x) {
+  c<- get_track(x, market = NULL, authorization = get_spotify_access_token())
+  d<- c$artists$id
+  e<- get_artists(d, authorization = get_spotify_access_token())
+  f<- e$name
+  g<-data.frame(song_id= x, artist_id = d, artist_name = f)
+  return(g)
+}  
+
+#getting samples (limited to 50 songs per run)
+
+spotify_filter_artist_id <- lapply( sample(genres_v2_no_hits$track_id,50), spotify_filter_artist_id_func)
+
+spotify_filter_artist_id <-  bind_rows(spotify_filter_artist_id, .id = "column_label")
+
+spotify_filter_artist_id2 <- lapply( sample(genres_v2_no_hits$track_id,50), spotify_filter_artist_id_func)
+
+spotify_filter_artist_id2 <-  bind_rows(spotify_filter_artist_id, .id = "column_label")
+
+
+spotify_filter_artist_id3 <- lapply( sample(genres_v2_no_hits$track_id,50), spotify_filter_artist_id_func)
+
+spotify_filter_artist_id3 <-  bind_rows(spotify_filter_artist_id, .id = "column_label")
+
+#merging samples
+no_hits_performers_sample <- rbind(spotify_filter_artist_id, spotify_filter_artist_id2, spotify_filter_artist_id3)
+
+###################################################################
+
+#creating "Performers" column in genres_v2_no_hits
+
+genres_v2_no_hits <- merge(genres_v2_no_hits, no_hits_performers_sample[ , c("song_id", "artist_name")], by.x = "track_id", by.y =  "song_id", all.x = TRUE)
+
+genres_v2_no_hits <- genres_v2_no_hits %>% rename(., Performer = artist_name)
+
+#keeping only unique tracks
+
+genres_v2_no_hits<- genres_v2_no_hits %>% distinct(track_id, .keep_all = TRUE)
+
+Hot_100_Audio_Features_uniques <- Hot_100_Audio_Features %>% distinct(track_id, .keep_all = TRUE)
+
+#checking datasets completeness
+
+genres_v2_no_hits[(genres_v2_no_hits$track_id==""),] %>% count()
+genres_v2_no_hits %>% filter(is.na(genre)== TRUE) %>% count()
+genres_v2_no_hits  %>% filter(genre == "") %>% count()
+
+Hot_100_Audio_Features_uniques[(Hot_100_Audio_Features_uniques$track_id==""),] %>% count()
+
+Hot_100_Audio_Features_uniques %>% filter(is.na(track_id)== TRUE) %>% count()
+
+Hot_100_Audio_Features_uniques %>% filter(is.na(danceability)== TRUE) %>% count()
+
+Hot_100_Audio_Features_uniques %>% filter(is.na(genre)== TRUE) %>% count()
+
+Hot_100_Audio_Features_uniques  %>% filter(genre == "") %>% count()
+
+Hot_100_Audio_Features_uniques  %>% filter(genre == "[]") %>% count()
+
+#excluding rows with no features from hot_100 data
+
+Hot_100_Audio_Features_uniques<- Hot_100_Audio_Features_uniques %>% filter(!is.na(danceability)== TRUE) 
+
+#COMBINING DATASETS and keeping balanced classes (at 16656 each)
+
+#combining datasets
+Dataset <- rbind(genres_v2_no_hits %>% select(all_of(valid_fields)),Hot_100_Audio_Features_uniques[1:16656,] %>% select(all_of(valid_fields)))
+
+#cleansing genre variable in Dataset to eliminate special characters and also only take the first genre associated to the song 
+
+Dataset$genre_clean  <- Dataset$genre  %>%   ifelse(str_detect(., ",", negate = FALSE),  str_extract(.,"^(.+?),") %>% str_replace_all(., "[:punct:]", " ") %>% trimws(.),.) %>%
+  str_replace_all(., "[:punct:]", " ") %>% trimws(.)
+
+
+#dataset profiling 
+summary(Dataset)
+
+Dataset_skim_summary <- Dataset  %>% skim()
+
+#checking completeness of final dataset
+Dataset[(Dataset$key==""),] %>% count()
+
+Dataset %>% filter(is.na(track_id)== TRUE) %>% count()
+
+Dataset %>% filter(genre == "[]") %>% count()
+
+Dataset %>% filter(genre == "") %>% count()
+
+#ensuring classes remain balanced
+Dataset %>% group_by(Is_hit) %>% summarise(n = n())
+
+#counting songs per genre
+dataset_genre <- Dataset %>% select(genre,genre_clean) %>%   group_by(genre_clean, genre) %>% summarise(n = n())
+
+#deleting tables not longer needed to liberate memory:
+rm(list=c("genres_v2", "genres_v2_no_hits", "Hot_100_Audio_Features","Hot_100_Audio_Features_uniques",
+          "spotify_filter_artist_id", "spotify_filter_artist_id2", "spotify_filter_artist_id3",
+          "a", "b", "valid_fields","exclude_genr", "exclude_Hot", "Dataset_skim_summary"))
+
+######DATA SPLITTING FOR MODELLING#####
+
+# Split-out validation dataset
+
+set.seed(75, sample.kind="Rounding") 
+
+# create a list of 80% of the rows in the cleansed Dataset  for training
+validationIndex <- createDataPartition(y = Dataset$Is_hit , times = 1, p=0.80, list=FALSE)
+# select 20% of the data for validation
+validation <- Dataset[-validationIndex,]
+# use the remaining 80% of data to training the models
+training <- Dataset[validationIndex,]
+```
+
+
+This new "Dataset"  was then used to create a training partition (80%) and validation partition (20%).
+
+I made a choice to maintain classes balanced to avoid any undue influence from this element.  However, this might distant from the actual population of songs across the world (where there is a lower proportion of hit songs than non-hit songs).  This has been considered in the conclusions of this report. 
+
+Further review and analysis was undertaken as explained in the following sections and  I documented the project through the following files for submission to EDX:
+
+- An Rmd file report detailing the methodology applied, 
+- A PDF report (issued from the Rmd file above mentioned), and 
+- An R script file that generates the analysis and  predictions
+
+
+## About the source datasets
+
+
+### Hot 100 Billboard songs
+
+The Billboard Hot 100 is the music industry standard record chart in the United States for songs, published weekly by Billboard magazine. Chart rankings are based on sales, radio play, and online streaming in the United States.
+
+Every week, Billboard releases "The Hot 100" chart of songs that were trending on sales and airplay for that week. This dataset is a collection of all "The Hot 100" charts released since its inception in 1958.  The dataset includes audio features for the songs taken from the Spotify database. The dataset is hosted in data.world website. 
+
+
+### Dataset of songs in Spotify
+
+This is a data set containing several songs by  genres and provides the related Spotify audio features. It is hosted in Kaggel. It was created in December 2020.
+
+
+## About the combined dataset
+
+The following fields were included in the final Dataset before partitioning the data into training and validation sets:
+
+
+```{r dataset fields, eval=T, echo=T}
+sapply(Dataset, class) %>% as.data.frame(.)
+```
+
+
+* **track_id**:  the Spotify ID for the track
+* **song_name**: title of the song
+* **Is_hit**: binary variable stating 0 if the song was not within the top 100 billboard chart or 1 if it was included (labels "No", "Yes")
+* **genre**: identify  the song style or musical tendency
+* **key**:  The key the track is in. Integers map to pitches using standard pitch class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.
+* **mode**:   Mode indicates the modality (major or minor) of a track, the type of scale from which its melodic content is derived. Major is represented by 1 and minor is 0.
+* **tempo**:  The overall estimated tempo of a track in beats per minute (BPM). In musical terminology, tempo is the speed or pace of a given piece and derives directly from the average beat duration.
+* **danceability**:  Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+* **energy**:  Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy. For example, death metal has high energy, while a Bach prelude scores low on the scale. Perceptual features contributing to this attribute include dynamic range, perceived loudness, timbre, onset rate, and general entropy.
+* **loudness**: The overall loudness of a track in decibels (dB). Loudness values are averaged across the entire track and are useful for comparing relative loudness of tracks. Loudness is the quality of a sound that is the primary psychological correlate of physical strength (amplitude). Values typically range between -60 and 0 db.
+* **speechiness**:  Speechiness detects the presence of spoken words in a track. The more exclusively speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute value. Values above 0.66 describe tracks that are probably made entirely of spoken words. Values between 0.33 and 0.66 describe tracks that may contain both music and speech, either in sections or layered, including such cases as rap music. Values below 0.33 most likely represent music and other non-speech-like tracks.
+* **acousticness**: A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.
+* **instrumentalness**:  Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental in this context. Rap or spoken word tracks are clearly "vocal". The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content. Values above 0.5 are intended to represent instrumental tracks, but confidence is higher as the value approaches 1.0.
+* **liveness**:  Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+* **valence**: a measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+* **duration_ms**:   The duration of the track in milliseconds.
+* **time_signature**:   An estimated time signature. The time signature (meter) is a notational convention to specify how many beats are in each bar (or measure). The time signature have the following values: 1, 3, 4, 5 representing the beats on a bar for the time signature (1/4, 3/4, 4/4, 5/4).  Items with value zero represents that data was missing. For example category "4/4" should be read  as "4 by 4".
+* **Performer**:   name of the artist that perform the song.  This data is missing for the majority of non-hit songs due to data limitations.
+* **genre_clean**: this is the genre field  without special characters and only the first genre for those songs that had more than one.
+
+The consolidated Dataset contained 33,312 records and 19 variables.  The following is a detail of top 10 performers by hit and non-hit songs for context:
+
+```{r Performers, eval=T, echo=T}
+#checking performers' names for hit & non-hit songs in consolidated Dataset (before partition)
+#hit songs
+Dataset %>% filter(Is_hit== "1") %>% group_by(Performer,Is_hit) %>% 
+  summarise(number_songs = n()) %>% arrange(desc(number_songs)) %>% head(10)
+#non-hit songs
+Dataset %>% filter(Is_hit== "0" & !is.na(Performer)) %>% group_by(Performer,Is_hit) %>% 
+  summarise(number_songs = n()) %>% arrange(desc(number_songs)) %>% head(10)
+
+#checking Michael Jackson songs
+Dataset %>% filter(Performer == "Michael Jackson") %>% group_by(Performer,Is_hit) %>% 
+  summarise(number_songs = n())
+
+```
+
+To illustrate the nature of the dataset, I also ran a check for Michael Jackson as he was one of the most popular performers of all time. We can see that for hit songs most  performer names are familiar, while this is not the case for non-hit songs.
+
+
+## About the training dataset
+
+The training dataset contained 26,650 observations and originally 19 columns, later two more columns were created.  The following details were noted:
+
+* There were 14 continue and 7 categorical variables in the training dataset (This is the same for the validation set).
+
+* Only 50% of the rows were fully completed, which indicate the presence of NA values in the dataset.  Most NA's related to field: "Performer". 
+
+```{r About_training0, eval=F, echo=T}
+
+# dimensions of dataset
+dim(training)
+
+#exploring training data
+training %>% introduce() 
+
+```
+
+```{r About_training1, eval=T, echo=T}
+
+#exploring training data
+training %>% plot_intro()
+
+
+#checking for missing values
+
+training %>% profile_missing()  # data frame of the missing values % per variable
+
+
+```
+
+The following indicates the variables classes and provides an overview of the training dataset first 3 rows:
+
+```{r About_training2, eval=T, echo=T}
+
+## variables types
+sapply(training, class) %>% as.data.frame(.)
+
+## reviewing the first 5 rows
+head(training, n=3)
+
+```
+
+I had a first glance of the distributions for most variables. Inspected the variable  "key" and noted that the dataset includes songs in all keys:
+
+```{r About_training3, eval=F, echo=T}
+# summary
+summary(training)
+
+#checking key field distribution
+unique(training$key)
+
+```
+
+ Finally, confirmed that the classes remained balanced after partition:
+
+```{r About_training4, eval=T, echo=T}
+
+#ensuring classes remained balanced after partition
+
+# class distribution
+cbind(freq=table(training$Is_hit), percentage=prop.table(table(training$Is_hit))*100)
+
+```
+
+
+## About the validation dataset
+
+The validation dataset contained 6,662 observations and originally 19 columns. Later, two more columns were created.
+
+We can see that the same columns are included in the validation dataset. The whole range of song keys are included and classes remained balanced after partition.
+
+```{r About_validation, eval=T, echo=T}
+# summary
+str(validation)
+
+unique(validation$key)
+
+#ensuring classes remained balanced after partition
+
+# class distribution
+cbind(freq=table(validation$Is_hit), percentage=prop.table(table(validation$Is_hit))*100)
+
+```
+
+
+## Cleanising of certain variables
+
+To aid with data visualisations and interpretation of the model, I relabeled the class variable "Is_hit" and converted the genres variable to factors using the following code:
+
+```{r class_variable, eval=F, echo=T}
+#modifying labels for ease of understanding
+
+#on training dataset
+levels(training$Is_hit) <- c("No","Yes")
+head(training$Is_hit)
+
+#on validation dataset
+levels(validation$Is_hit) <- c("No","Yes")
+head(validation$Is_hit)
+
+#converting genres clean column to factors
+
+training$genre_clean_factors <- as.factor(training$genre_clean)
+
+#replicating it in validation dataset
+
+validation$genre_clean_factors <- as.factor(validation$genre_clean)
+
+
+```
+
+
+## METHODOLOGY:
+
+## Exploratory data analysis
+
+### Initial assumptions and expectations
+
+Before looking in detail at the data, I started my analysis by theorising the following ideas based on my musical knowledge and intuition. 
+
+I have separated these in assumptions subsequently supported and non-supported by data.
+
+**Initial assumptions subsequently supported by data:** 
+
+* **genre**: should have an impact as most people have preferences for particular genres over others
+
+* **key**: might not have an impact, but certain keys are more common within certain genres than other, therefore this could be a minor contributing predictor
+
+* **mode**:  songs in a major scale tend to be more vibrant and happy.  I believe most people would prefer songs in major scale as oppose to minor scales, but this will depend greatly of the population
+
+* **danceability**:  danceable songs are not necessary more popular among the general population, but can be a factor
+
+* **speechiness**:   Most songs do not have speeches within the track (although some genres would have more). Songs with no speeches would have values between 0.33 & 0.66.  Some popular songs will have some elements of speechiness but I believe are not the majority
+
+* **acousticness**:  it is possible that acoustic music is less popular.  It probably has some relation with genre as well
+
+* **instrumentalness**:   it is probable that songs with lyrics are more popular than instrumental songs.  Therefore we should see more popular songs with low instrumentalness
+
+* **liveness**:  I believe most popular songs are studio recording rather than live versions
+
+* **valence**: I believe that people would have a preference for songs that have a sound resembling happiness and positivism
+
+**Initial assumptions subsequently non-supported by data:**
+
+* **energy**:  It is possible that people would prefer more energetic songs than slow songs.  Although some ballads are quite popular.  
+
+* **loudness**:  this item should be associated with energy and may be also higher in songs that include more instruments or are recorded at higher volumes.  My guess is that people would prefer songs that have a medium to high level of loudness.  This probably needs to be considered based on population preference (partially supported by data)
+
+* **duration_ms**:  I believe songs that are too long or short will not be very popular (partially supported by data)
+
+* **time signature**:  most conventional time signature is 4/4.  Therefore, most popular songs should be in this time signature  (partially supported by data)
+
+* **Other factors**: many other factors outside audio features have an impact, such as marketing, artist, etc. (No data available).
+
+
+### Data Visualisations
+
+I used the above to guide my exploratory data analysis and formulate research questions to identify features that could be good predictors:
+
+**Correlations**
+
+```{r correlations, eval=T, echo=T}
+# Data visualizations
+
+# Creating index of predictors
+features_index <- c(5:17,20)
+features_index_num <- c(5:17)
+
+#checking correlations 
+corr_training <-cor(training[features_index_num])
+
+corrplot(corr_training, method="number",type= "full",insig = "blank", number.cex = 0.6)
+
+```
+
+**Correlations insights:**
+
+* There is a positive correlation between energy & loudness (0.69).  Therefore, energetic songs have a tendency to be louder. We could probably exclude one of these features.
+
+* There is a negative correlation between energy/loudness and acousticness.  Songs that are more energetic might have less acoustic instruments (probably the instrumentation includes electric/electronic music as well as computer generated effects)
+
+* There are some other minor positive correlations, such as:
+  ** valence slightly correlates to danceability,
+  ** speechiness slightly correlates to danceability and tempo
+
+* There are some minor negative correlations: 
+  ** danceability and acousticness (i.e there is a small tendency to use electric instruments in songs that are made for dancing),
+  ** danceability and instrumentalness, 
+  ** valence and instrumentalness
+
+
+**Distributions: histograms for each potential predictor**
+
+The following code allows to have a quick glance at the distribution of the  variables: 
+
+```{r dist_hists, eval=T, echo=T}
+# histograms each numeric predictor (separated in groups to ease visualization)
+par(mfrow=c(2,3))
+for(i in 5:10) {
+  hist(training[,i], main=names(training)[i])
+}
+
+par(mfrow=c(2,2))
+for(i in 11:14) {
+  hist(training[,i], main=names(training)[i])
+}
+
+par(mfrow=c(1,3))
+for(i in 15:17) {
+  hist(training[,i], main=names(training)[i])
+}
+
+
+```
+
+
+**Distributions: box plots for each potential predictor**
+
+I explored the  distributions per classes for all potential predictors by using box plots: 
+```{r dist_box, eval=T, echo=T}
+
+par(mfrow=c(2,3))
+for(i in 5:10) {
+  boxplot(training[,i] ~ training[,3] , main=names(training)[i], las =1, col= c(2,4))
+  
+}
+
+par(mfrow=c(2,2))
+for(i in 11:14) {
+  boxplot(training[,i] ~ training[,3] , main=names(training)[i], las =1, col= c(2,4))
+  
+}
+
+
+par(mfrow=c(1,3))
+for(i in 15:17) {
+  boxplot(training[,i] ~ training[,3] , main=names(training)[i], las =1, col= c(2,4))
+  
+  }
+
+par(mfrow=c(1,1))
+boxplot(training[,20] ~ training[,3] , main=names(training)[20], las =1, col= c(2,4))
+
+
+```
+
+
+**Distributions insights:**
+
+At first glance we can see a variety of distributions, with some variables presenting a normal distribution (tempo, danceability, energy, loudness and valence), while others are right skewed (speechiness, acousticness, instrumentalness and liveness).  There are also a number of categorical variables.
+
+When splitting the distribution by class, we can see that certain variables such as genres, valence and tempo have a clear distinction in the distribution between classes and might be good candidates for predictors.
+
+
+### Research questions:
+
+To deepen my understanding of the data I conducted further analysis to address research questions derived from the insights previously obtained.
+
+I have divided this analysis in two groups:  
+
+* features describing songs types
+* features describing elements of songs speed 
+
+
+**Analysis part I:  features describing songs types**
+
+**What are the most common keys by class?** 
+
+To answer this question i used the following code to determine the number of songs by key and by class:
+```{r research0, eval=F, echo=T}
+by_key_count <-training %>% select(key, Is_hit) %>% group_by( key, Is_hit) %>% summarise(total_songs = n())
+  
+```
+
+and plotted the result as follows:
+
+```{r research1, eval=T, echo=T}
+ by_key_count %>% ggplot(., aes(x=factor(key, labels =c("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")), 
+                                 y = total_songs, fill = Is_hit )) + 
+    geom_bar(stat = "Identity" , position = "dodge") +
+    scale_fill_brewer(palette = "Set1")  +
+    theme(legend.position="none")
+  
+```
+
+**insights:** 
+
+* There are hit and non-hit songs across all tonalities (keys).
+
+* Key analysis indicates that most common hit songs are in C (0) , G (7), D(2) and A(9) in that order.  C# tonality is the key with most non-hit songs. The distribution of classes for each key might serve to calculate the probability of a song being a hit. Therefore, it might be a good candidate for predictor in logistic regression models.
+
+* We can see that songs composed in D# scales are less frequent, and there is a tendency in this tonality to favor hit songs.
+
+
+**what are the most common genres by class?**  
+
+The following code helped me answering the question:
+```{r research2, eval=F, echo=T}
+
+#counting the songs by genre and class 
+by_genre_count <-training %>% select(genre_clean_factors, Is_hit) %>% group_by( genre_clean_factors, Is_hit) %>% summarise(total_songs = n())
+  
+summary(by_genre_count$total_songs)
+
+#I also considered the proportion of of hit non-hit by genre and the distribution
+prop_bygenre <- prop.table(table(training[,c("genre_clean_factors", "Is_hit")]), margin = 2 ) *100 
+
+# distribution of  songs per genre
+by_genre_count %>% group_by(total_songs) %>% 
+  summarise(freq= n())%>% ggplot(., aes(x=as.factor(total_songs), y = freq )) + 
+  geom_bar(stat = "Identity" ) +
+  theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+#top ten genres for hit songs (by count of songs)
+by_genre_count %>% filter(Is_hit == "1") %>%
+    arrange(desc(total_songs)) %>%
+    head(10) 
+  
+#top ten genres for non-hit songs (by count of songs)
+by_genre_count %>% filter(Is_hit == "0") %>%
+    arrange(desc(total_songs)) %>%
+    head(10) 
+
+ 
+```
+
+**Insights:**
+
+* Top ten genres for hit songs (by count of songs) are:
+   1  adult standards
+   2 album rock
+   3 dance pop
+   4 contemporary country
+   5 classic soul
+   6 brill building pop
+   7 alt hip hop
+   8 disco
+   9 alternative metal
+   10 pop
+
+* There are only eight genres in the data for non-hit songs (by count of songs):
+
+  1 Underground Rap    
+  2 Dark Trap
+  3 Hip hop       
+  4 RnB    
+  5 Emo    
+  6 Trap Metal   
+  7 Rap    
+  8 Pop   
+
+**Are genres, key and mode potential good predictors?**  
+
+To answer this question i grouped data for these three variables:
+
+```{r research4, eval=F, echo=T}
+#considering genres, key and mode as predictors
+
+by_genre_key_mode <-training %>% select(genre_clean_factors, key, mode, Is_hit) %>% group_by( genre_clean_factors, key, mode, Is_hit) %>% summarise(total_songs = n())
+```
+
+I studied the following visualisations:
+
+* songs by genre and class: 
+```{r research5, eval=T, echo=T}
+#checking distribution of songs by genre and class
+by_genre_key_mode %>% 
+ggplot(., aes(x=total_songs, group=Is_hit, fill=Is_hit)) +
+  geom_density(adjust=1.5, alpha=.4) +
+  scale_x_continuous(trans='log2')
+```
+
+
+* relationship between mode and key: 
+```{r research7, eval=F, echo=T}
+#considering key and mode relationship
+prop.table(table(training[,c("key","mode")]) ) *100
+
+```
+
+```{r research8, eval=T, echo=T}
+#considering key and mode relationship
+by_genre_key_mode %>% 
+ggplot(., aes(x = factor(key, labels =c("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")), y = total_songs))+
+  geom_bar(
+    aes(fill = as.factor(mode) ), stat = "identity", color = "white",
+    position = position_dodge(0.9)
+  )+
+  facet_wrap(~ Is_hit) + 
+  scale_fill_brewer(palette = "Set1") 
+
+```
+
+
+* considering mode by itself as potential predictor: 
+
+Understanding whether there is dependency between the class variable ("Is_hit") and Mode:
+```{r research9, eval=T, echo=T}
+prop.table(table(training[,c("Is_hit","mode")]), margin = 2 ) *100 
+
+chisq.test(training$Is_hit, training$mode)  # independent variables
+
+#mode density by class
+training  %>% 
+ggplot(., aes(x=mode, group=Is_hit, fill=Is_hit)) +
+   geom_density(adjust=1.5, alpha=.4) 
+```
+
+Relationship between mode, key and genre by class
+```{r research10, eval=T, echo=T}
+#considering mode in relation to genre and key  
+by_genre_key_mode  %>% group_by(mode) %>% 
+  ggplot(., aes(x=mode, group=Is_hit, fill=Is_hit)) +
+  geom_density(adjust=1.5, alpha=.4) 
+```
+
+**insights:** 
+
+* The density distribution of songs per genres stratified by class (hit/non-hit) shows a clear distinction between the classes.  This together with the analysis from genres boxplot stratified by class indicates that genres could be a good predictor and should be included in the model.  
+
+* When combining mode with key is noted that most hit songs are in Major scales, except for B tonality where there is a balance.  This is different for non-hit songs where there is a mix of songs composed in major and minor scales that have prevalence in the various tonalities.
+
+* Usually non-hit songs  are a majority for sharp/flat tone .  While, hit songs composed in natural tones are more frequent than non-hit songs.
+
+* There is overlap between the density distributions for classes by mode.  However, when this is seen in the light of genre and key the overlapping reduced, allowing to predict some areas for hit songs.  Mode might be a minor contributor to prediction and should therefore be included in the model.
+
+* mode and IS_hit are independent as stated by the low p-value of the Chi.Square test conducted.
+
+**Are instrumentalness, acousticness and speechiness  potential good predictors?**  
+
+I studied the following visualisations:
+
+* songs by instrumentalness and class: 
+```{r research11, eval=T, echo=T}
+#considering distribution of instrumentalness
+#boxplot by class
+training %>%
+  ggplot(., aes(x=Is_hit, y=instrumentalness)) + 
+  geom_boxplot( fill= c(2,4)) + 
+  xlab("Is_hit")+
+  scale_y_log10()
+
+# histogram by class  
+training %>%
+  ggplot( aes(x=instrumentalness, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+  labs(fill="")+
+  scale_x_log10()
+
+```
+
+* songs by acousticness and class:
+```{r research12, eval=T, echo=T}
+#considering the distribution of acousticness
+#histogram by class
+training %>%
+  ggplot( aes(x=acousticness, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+   labs(fill="")
+
+#boxplot by class
+training %>%
+  ggplot(., aes(x=Is_hit, y=acousticness)) + 
+  geom_boxplot( fill= c(2,4)) + 
+  xlab("Is_hit")
+
+```
+
+
+* songs by speechiness and class:
+```{r research13, eval=T, echo=T}
+#considering the distribution of speechiness
+#histogram by class
+training %>%
+  ggplot( aes(x=speechiness, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+  labs(fill="") +
+  scale_x_log10()
+
+#boxplot by class
+training %>%
+  ggplot(., aes(x=Is_hit, y=speechiness)) + 
+  geom_boxplot( fill= c(2,4)) + 
+  xlab("Is_hit")
+```
+
+
+* relationship between instrumentalness and acousticness:
+```{r research14, eval=T, echo=T}
+#considering the relationship between instrumentalness and acousticness
+training %>%
+  ggplot(., aes(x=instrumentalness, y=acousticness, color=Is_hit)) +
+  geom_point(alpha = 0.4) +
+  theme(legend.position="none")
+
+```
+
+* relationship between instrumentalness and speechiness:
+```{r research15, eval=T, echo=T}
+#considering the relationship between instrumentalness and speechiness
+training %>%
+  ggplot(., aes(x=instrumentalness, y=speechiness, color=Is_hit)) +
+  geom_point(alpha = 0.4) +
+  theme(legend.position="none")
+
+```
+
+**insights:** 
+
+* Instrumentalness analysis indicates that instrumental songs (i.e no vocals) have a tendency to be non-hit songs. However, there is significant overlapping of the classes in the distribution.  This feature by itself would not be a good predictor.
+
+* Acousticness analysis indicate that most songs are not acoustic.  However, there is more presence of acoustic songs within the hit group than the non-hit group.  Some outliers noted in the non-hit group, with value above 0.6,  indicated that very acoustic songs tends to be non-hits. This feature might make a small contribution to predictions
+
+* Speechiness suggest that most songs contain both music and words. The non-hit songs have a bimodal distribution with most songs showing high levels of speechiness. This feature might be a good contributor to predictions. 
+
+* the relationship between instrumentalness and acousticness shows a large portion of hits songs that are either  low in instrumentalness or acousticness.  As instrumentalness increases, the probability of being a non-hit song slightly increases. However, we can see a number of songs that are high in both features.  The combination of these two variables might be good candidates for a  classification tree model.
+
+* For instrumentalness and speechiness, we can see that hit songs tend to be low in speechiness or instrumentaless.   This could be related to certain genres such as: rap and hip hop, where the signing techniques resemble speeches. There are few outliers for the hit group that are high in both features. An increase in both features seems to yield a larger number of non-hit songs.  
+
+
+**Analysis part II:  features describing elements of songs speed**
+
+**Are time_signature and liveness  potential good predictors?**  
+
+* songs by time_signature and class:
+```{r research16, eval=F, echo=T}
+#considering time_signature distribution
+
+#time_signature distribution by classes
+
+summary(training$time_signature)
+
+by_time_sign_count <-training %>% select(time_signature, Is_hit) %>% group_by( time_signature, Is_hit) %>% summarise(total_songs = n())
+
+```
+
+```{r research17, eval=T, echo=T}
+#class by time_signature categories
+by_time_sign_count %>%
+  ggplot(., aes(x=factor(time_signature, labels =c("missing", "1/4","3/4","4/4","5/4")), 
+                y = total_songs, fill = Is_hit )) + 
+  geom_bar(stat = "Identity" , position = "dodge") +
+  scale_fill_brewer(palette = "Set1")  +
+  theme(legend.position="none")
+```
+
+* songs by liveness and class:
+```{r research18, eval=T, echo=T}
+#considering the distribution of liveness
+#histogram by class
+training %>%
+  ggplot( aes(x=liveness, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins= 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+  labs(fill="")
+
+#boxplot by class
+training %>%
+  ggplot(., aes(x=Is_hit, y=liveness)) + 
+  geom_boxplot( fill= c(2,4)) + 
+  xlab("Is_hit")
+
+```
+
+**insights:** 
+
+* Time_signature indicates that most songs are written in "4/4". Hit and non-hit songs distribute similarly across the categories.  Therefore this variable by itself is not useful for prediction. Two songs  had value zero (i.e. equivalent to n/a).  The "3/4" category had more hit than non-hit songs, while in the "5/4" category there is prevalence of non-hit songs.
+
+* Liveness seems to have a similar distribution across the classes and might not be an important contributor to predictions. The median (around 0.125) and distribution per classes is similar. This indicates that majority of songs (both hit and non-hit) are not recorded in front of a live audience. Some outliers were noted at the upper end of the distribution . 
+
+
+**Are tempo, valence, duration, danceability, and energy  potential good predictors?** 
+
+The distributions visualisations previously performed indicate that energy and danceability do not has distinct distribution among the classes, therefore no further review of these distributions was considered. However, i studied the relationship of these variables with other  variables of interest. Previously, I have also noted that energy and loudness are correlated.
+
+
+* songs by tempo and class:
+```{r research19, eval=T, echo=T}
+# considering tempo interquartile by classes
+
+training %>% filter(Is_hit== "No") %>% select(tempo) %>% summary(.)
+
+training %>% filter(Is_hit== "Yes") %>% select(tempo) %>% summary(.)
+
+#tempo distribution by classes
+training %>%
+  ggplot( aes(x=tempo, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+  labs(fill="")
+
+```
+
+
+* songs by valence and class:
+```{r research20, eval=T, echo=T}
+#valence distribution by classes
+training %>%
+  ggplot( aes(x=valence, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="")
+
+```
+
+* songs by duration and class:
+```{r research21, eval=T, echo=T}
+#considering the distribution of duration
+#histogram by class
+training %>%
+  ggplot( aes(x=duration_ms, fill=Is_hit)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', bins = 30) +
+  scale_fill_manual(values=c("#69b3a2", "#404080")) +
+  labs(fill="") +
+  scale_x_log10()
+
+#boxplot by class
+training %>%
+  ggplot(., aes(x=Is_hit, y=duration_ms)) + 
+  geom_boxplot( fill= c(2,4)) + 
+  xlab("Is_hit")
+
+```
+
+* relationship of tempo and valence :
+```{r research22, eval=T, echo=T}
+#considering tempo and valence relationship
+training %>%
+  ggplot(., aes(x=valence, y=tempo, color=Is_hit)) +
+  geom_point() +
+  theme(legend.position="none")
+
+```
+
+
+* relationship of tempo and danceability  :
+```{r research23, eval=T, echo=T}
+#considering tempo and danceability relationship
+training %>%
+  ggplot(., aes(x=tempo, y=danceability, color=Is_hit)) +
+  geom_point() +
+  theme(legend.position="none")
+```
+
+* relationship of tempo and energy :
+```{r research24, eval=T, echo=T}
+#considering tempo and energy relationship
+training %>%
+  ggplot(., aes(x=tempo, y=energy, color=Is_hit)) +
+  geom_point() +
+  theme(legend.position="none")
+
+```
+
+* relationship of energy and loudness  :
+```{r research25, eval=T, echo=T}
+#considering the relationship between energy and loudness
+training %>%
+  ggplot(., aes(x=energy, y=loudness, color=Is_hit)) +
+  geom_point() +
+  theme(legend.position="none")
+```
+
+* relationship of duration and tempo  :
+```{r research26, eval=T, echo=T}
+#considering the relationship between tempo and duration
+training %>%
+  ggplot(., aes(x=duration_ms, y=tempo, color=Is_hit)) +
+  geom_point(alpha = 0.2) +
+  theme(legend.position="none")+
+  scale_x_log10()
+```
+
+**insights:** 
+
+* Tempo has a different distribution per class with a median lower for hit songs  than the second quartile for non-hit songs. There is some level of overlapping on  the distribution by classes, but some areas are distinct.  Tempo might be a good contributor to predictions.
+
+* The average tempo for hit songs is around 120 bpm, this is the top level of "moderato" tempo, with an interquartile between 99  to 136 bpm (andante moderato to allegro tempo).  Non-hit songs have a mean of 156 bpm with an interquartile between 130 to 174 bpm (allegro to vivacissimo).  This means songs that have very fast pace will be less popular than songs that have a moderate tempo, with the average song keeping a slightly fast tempo.  
+
+* Danceability has a normal distribution with a median of around 0.7.  Hit songs has a lower median than non-hit songs, but distributions overlap.  There are few outliers at the bottom quartile.
+
+* Energy also has a distribution that resemble a normal distribution but slightly left skewed. Loundness also appears to have a normal distribution. It is positive correlated to energy and might be convenient to exclude one of these variables from the model. 
+
+* For danceability and energy relation the classes overlap.  These two parameters might not be good predictors on their own. 
+
+* Valence seems to have a distinct distribution between the classes with hit songs having a median above the interquartile for non-hit songs.  Hit songs have a mean valence around 0.6.  There is some level of overlapping between the classes on valence distribution. Valence can be a contributor to predictions.
+
+* Duration_ms appears to have a normal distribution with classes overlapping.  Hit songs seems to have slight longer duration than no-hit songs in average.  Some outliers were noted for both classes, with higher outliers for the hit songs (i.e. longer songs). This feature might be a minor contributor to predictions. 
+
+* When considered the relationship between duration and tempo, it seems that faster songs that are longer tend to be in the hit group, while shorter songs in general tend to be non-hit, with a predominance of moderate to fast songs.
+
+
+## Features selection
+
+The previous analysis provided two sets of possible features that can be used in the models as follows:
+
+* by song type
+* by song speed
+
+A third alternative taken was looking for automated feature selection using the package Boruta. 
+
+[Boruta](https://cran.r-project.org/web/packages/Boruta/Boruta.pdf) uses Random Forest. The method performs a top-down search for relevant features by comparing original attributes’ importance with importance achievable at random, estimated using their permuted copies, and progressively eliminating irrelevant features to stabilise that test. It uses statistically significance to decide the order of the features.
+
+This provided a third set of features to be then subsequently tested in various potential models.  The following code was used:
+
+```{r features_select1, eval=F, echo=T}
+#considering the relationship between tempo and duration
+# a) Feature Selection
+
+#creating indexes to evaluate features
+colnames(training)
+features_index_plusclass <- c(3, 5:17,20)
+
+#define test data to check run time before running the full feature selection model 
+set.seed(75)
+test_data <- sample_n(training[,features_index_plusclass],500)
+
+#considering automated feature selection 
+# test train the model for first model group
+set.seed(75)
+startTime <- Sys.time()
+boruta_music <- Boruta(Is_hit ~ ., data=na.omit(test_data), doTrace=0)  
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/500)*26650)
+
+#if execution time from test is acceptable run the  model over full data
+# obtaining significant variables
+
+set.seed(75)
+startTime <- Sys.time()
+boruta_music <- Boruta(Is_hit ~ ., data=na.omit(training[features_index_plusclass]), doTrace=0)  
+endTime <- Sys.time()
+print(endTime - startTime)
+
+# Getting significant variables including tentative
+boruta_signif_vars <- getSelectedAttributes(boruta_music, withTentative = TRUE)
+roughFixMod_music <- TentativeRoughFix(boruta_music)
+boruta_signif_vars <- getSelectedAttributes(roughFixMod_music)
+print(boruta_signif_vars)
+
+colnames(training[features_index_plusclass])
+
+# Variable Importance Scores
+imps <- attStats(roughFixMod_music)
+imps2 = imps[imps$decision != 'Rejected', c('meanImp', 'decision')]
+head(imps2[order(-imps2$meanImp), ])  # descending sort
+
+```
+
+The following result was obtained:
+```{r features_select2, eval=T, echo=T}
+
+# Plot variable importance
+plot(boruta_music, cex.axis=.7, las=2, xlab="", main="Variable Importance") 
+
+```
+
+
+## Data pre-processing
+
+After exploring and visualising the data noted that the following transformations were required:
+
+```{r pre-processing1, eval=F, echo=T}
+
+#Pre-processing: encoding genre factors into a numeric with range 0 to 1
+
+#converting gender range from 0 to 1  the distribution
+
+preProcess_range_model <- preProcess(data.frame(new_negre =as.numeric(training[,c("genre_clean_factors")])), method='range')
+new_genre_encoded <- predict(preProcess_range_model, newdata = data.frame(new_negre= as.numeric(training[,c("genre_clean_factors")])))
+
+#appending, checking class and visualising distributions to ensure it remains unaltered 
+
+training$new_genre <- new_genre_encoded$new_negre
+class(training$new_genre)
+
+par(mfrow=c(1,2))
+for(i in 20:21) {
+  boxplot(training[,i] ~ training[,3] , main=names(training)[i], las =1, col= c(2,4))
+  
+}
+
+##performing same transformation on validation dataset
+
+#converting gender range from 0 to 1  the distribution
+
+preProcess_range_model <- preProcess(data.frame(new_negre =as.numeric(validation[,c("genre_clean_factors")])), method='range')
+new_genre_encoded <- predict(preProcess_range_model, newdata = data.frame(new_negre= as.numeric(validation[,c("genre_clean_factors")])))
+
+#appending, checking class and visualising distributions
+
+validation$new_genre <- new_genre_encoded$new_negre
+class(validation$new_genre)
+
+par(mfrow=c(1,2))
+for(i in 20:21) {
+  boxplot(validation[,i] ~ validation[,3] , main=names(validation)[i], las =1, col= c(2,4))
+  
+}
+
+#removing objects no longer needed
+rm(preProcess_range_model, new_genre_encoded )
+
+##Transforming integers to numeric to avoid issues with caret processing
+#checking classes
+## variables types
+sapply(training, class) %>% as.data.frame(.)
+
+#ensuring that transformation does not affect output 
+data.frame( trans = unique(as.numeric(training$key)), norm = unique(training$key))
+data.frame( trans = unique(as.numeric(training$mode)), norm = unique(training$mode))
+data.frame( trans = head(as.numeric(training$duration_ms)), norm = head(training$duration_ms))
+
+#transforming integer variables to numeric in training dataset
+
+training$key <- as.numeric(training$key)
+training$mode <- as.numeric(training$mode)
+training$duration_ms <-as.numeric(training$duration_ms)
+                            
+#transforming integer variables to numeric in validation dataset
+
+validation$key <- as.numeric(validation$key)
+validation$mode <- as.numeric(validation$mode)
+validation$duration_ms <-as.numeric(validation$duration_ms)
+
+```
+
+
+I selected three sets of potential predictors and created indexes to slice the data, as follows:
+
+* features per song type:
+```{r pre-processing2, eval=F, echo=T}
+
+#features of songs characteristics (song types)
+type_group_index<- c(3, 21,5,6,11,12,13)
+```
+
+```{r pre-processing3, eval=T, echo=T}
+#features of songs characteristics (song types)
+sapply(training[,type_group_index], class) %>% as.data.frame(.)
+
+
+```
+
+* features per song speed:
+```{r pre-processing4, eval=F, echo=T}
+#features of songs speed
+speed_group_index <- c(3,7,8, 9,15,16)
+
+```
+
+```{r pre-processing5, eval=T, echo=T}
+#features of songs speed
+sapply(training[,speed_group_index], class) %>% as.data.frame(.)
+```
+
+
+* features from automated selection (top 6 features):
+```{r pre-processing6, eval=F, echo=T}
+#from Automated features selection 
+AFS_group_index <- c(3,21,7, 11, 15,16,10)
+```
+
+```{r pre-processing7, eval=T, echo=T}
+#from Automated features selection 
+sapply(training[,AFS_group_index], class) %>% as.data.frame(.)
+```
+
+To start with the first round of spot checking of algorithms i defined data subsets of 3000 random records to check processing time and potential performance:
+
+```{r pre-processing8, eval=F, echo=T}
+#define test data to check run time before running the full feature selection model 
+set.seed(75) 
+n_test <- 3000
+test_data2 <- sample_n(training[,type_group_index],n_test)
+
+test_data3 <- sample_n(training[,speed_group_index],n_test)
+
+test_data4 <- sample_n(training[,AFS_group_index],n_test)
+```
+
+## Spot-Check of Algorithms
+
+Given that this a binary classification problem, I have selected an initial group of algorithms that can be used in this kind of tasks, I consulted various sources to get the following definitions:
+
+* **Logistic Regression:**  is a classification algorithm used to assign observations to a discrete set of classes. Logistic regression transforms its output using the logistic sigmoid function to return a probability value
+
+* **k-nearest-neighbor (KNN):** is a data classification method for estimating the likelihood that a data point will become a member of one group or another based on how close the data point is to a nearby group 
+
+* **Classification And Regression Trees (CART):**  is an algorithm that builds a decision tree based on Gini's impurity index as splitting criterion. It builds a binary tree by splitting a node into two child nodes repeatedly
+
+* **Naive Bayes:** is a probabilistic classifier based on Bayes’ theorem, which assumes that each feature makes an independent and equal contribution to the probability of a sample belonging to a specific class. It assumes that features do not interact with each other
+
+* **Support Vector Machine (SVM):** is a type of deep learning algorithm that performs supervised learning for classification or regression of data groups. It  builds a learning model that assigns new examples to one group or another
+
+* **Random Forest:** is a classification algorithm consisting of many decisions trees. It uses bagging and feature randomness when building each individual tree to try to create an uncorrelated forest of trees whose prediction by committee is more accurate than that of any individual tree
+
+Using the following code I spot-checked these algorithms with each groups of features previously selected, using only a portion of the data (3000 records): 
+
+```{r spot-check1, eval=F, echo=T}
+# 10-fold cross validation with 3 repeats
+trainControl <- trainControl(method="repeatedcv", number=10, repeats=3, savePredictions = T, classProbs=T)
+metric <- "Accuracy"
+
+# Test options and evaluation metric over small subset of data
+
+# considering algorithms for models based on songs characteristics
+# LG  
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.glm <- train(Is_hit ~ ., data = test_data2,  method="glm", metric=metric, trControl=trainControl,  family=binomial(link="logit"), na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# KNN
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.knn <- train(Is_hit ~ ., data=test_data2, method="knn", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# CART
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.cart <- train(Is_hit ~ ., data=test_data2, method="rpart", metric=metric,
+                  trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# Naive Bayes
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.nb <- train(Is_hit ~ ., data=test_data2, method="nb", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# SVM
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.svm <- train(Is_hit ~ ., data=test_data2, method="svmRadial", metric=metric,
+                 trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# RF
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.RF <- train(Is_hit ~ ., data=test_data2, method="rf", ntree=5, metric=metric,
+                trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# considering algorithms for models based on songs speed
+# LG
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.glm <- train(Is_hit ~ ., data = test_data3,  method="glm", metric=metric, trControl=trainControl,  preProcess = 'center',  family=binomial(link="logit"), na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# KNN
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.knn <- train(Is_hit ~ ., data=test_data3, method="knn", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# CART
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.cart <- train(Is_hit ~ ., data=test_data3, method="rpart", metric=metric,
+                             trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# Naive Bayes
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.nb <- train(Is_hit ~ ., data=test_data3, method="nb", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# SVM
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.svm <- train(Is_hit ~ ., data=test_data3, method="svmRadial", metric=metric,
+                            trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# RF
+set.seed(75)
+startTime <- Sys.time()
+speedgroup.fit.RF <- train(Is_hit ~ ., data=test_data3, method="rf", ntree=5, metric=metric,
+                           trControl=trainControl, na.action=na.exclude)
+
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# considering algorithms for models based on automated features selection
+
+# LG  (with preprocess set to center to normalise the predictors as its beneficial for Logistic regression)
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.glm <- train(Is_hit ~ ., data = test_data4,  method="glm", metric=metric, trControl=trainControl, preProcess = 'center', family=binomial(link="logit"), na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# KNN
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.knn <- train(Is_hit ~ ., data=test_data4, method="knn", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# CART
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.cart <- train(Is_hit ~ ., data=test_data4, method="rpart", metric=metric,
+                           trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# Naive Bayes
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.nb <- train(Is_hit ~ ., data=test_data4, method="nb", metric=metric, trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# SVM
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.svm <- train(Is_hit ~ ., data=test_data4, method="svmRadial", metric=metric,
+                          trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# RF
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.RF <- train(Is_hit ~ ., data=test_data4, method="rf", ntree=5, metric=metric,
+                         trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+print((as.numeric(endTime - startTime)/n_test)*26650)
+
+# Compare algorithms
+results <- resamples(list(LG_type=typegroup.fit.glm, LG_speed=speedgroup.fit.glm, LG_AFS=AFSgroup.fit.glm,
+                          KNN_type=typegroup.fit.knn, KNN_speed=speedgroup.fit.knn, KNN_AFS=AFSgroup.fit.knn,
+                          CART_type=typegroup.fit.cart, CART_speed=speedgroup.fit.cart, CART_AFS=AFSgroup.fit.cart,
+                          NB_type=typegroup.fit.nb, NB_speed=speedgroup.fit.nb, NB_AFS=AFSgroup.fit.nb, 
+                          SVM_type=typegroup.fit.svm, SVM_speed=speedgroup.fit.svm, SVM_AFS=AFSgroup.fit.svm,
+                          RF_type=typegroup.fit.RF, RF_speed=speedgroup.fit.RF, RF_AFS=AFSgroup.fit.RF))
+```
+
+The following results were noted:
+```{r spot-check2, eval=T, echo=T}
+#spot check of models
+summary(results)
+dotplot(results)
+```
+
+## Evaluating Selected Algorithms
+
+Based on the above cross-validated results over the subset data, and considering processing time, I have selected the following models for consideration over the full dataset:
+
+```{r evaluating1, eval=F, echo=T}
+# Checking performance with full training dataset to select best models
+
+# RF type
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.RF2 <- train(Is_hit ~ ., data=training[,type_group_index], method="rf", ntree=5, metric=metric,
+                          trControl=trainControl, na.action=na.exclude)
+endTime <- Sys.time()
+print(endTime - startTime)
+
+
+# RF AFS
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.RF2 <- train(Is_hit ~ ., data=training[,AFS_group_index], method="rf", ntree=5, metric=metric,
+                         trControl=trainControl, na.action=na.exclude, preProcess= "center")
+endTime <- Sys.time()
+print(endTime - startTime)
+
+# CART Type
+set.seed(75)
+startTime <- Sys.time()
+typegroup.fit.cart2 <- train(Is_hit ~ ., data=training[,type_group_index], method="rpart", metric=metric,
+                            trControl=trainControl, na.action=na.exclude, preProcess= "center")
+endTime <- Sys.time()
+print(endTime - startTime)
+
+#SVM_AFS excluded due to long processing time
+
+# CART AFS
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.cart2 <- train(Is_hit ~ ., data=training[,AFS_group_index], method="rpart", metric=metric,
+                             trControl=trainControl, na.action=na.exclude, preProcess= "center")
+endTime <- Sys.time()
+print(endTime - startTime)
+
+# LG  AFS 
+set.seed(75)
+startTime <- Sys.time()
+AFSgroup.fit.glm2 <- train(Is_hit ~ ., data = training[,AFS_group_index],  method="glm", metric=metric, trControl=trainControl, family=binomial(link="logit"), na.action=na.exclude,  preProcess= "center")
+endTime <- Sys.time()
+print(endTime - startTime)
+
+# Compare first selection of algorithms
+results_fisrt_select <- resamples(list(RF_type=typegroup.fit.RF,RF_AFS=AFSgroup.fit.RF,
+                                       CART_type=typegroup.fit.cart, CART_AFS=AFSgroup.fit.cart,
+                                       LG_AFS=AFSgroup.fit.glm, RF_type2=typegroup.fit.RF2,RF_AFS2=AFSgroup.fit.RF2,
+                                       CART_type2=typegroup.fit.cart2, CART_AFS2=AFSgroup.fit.cart2,
+                                       LG_AFS2=AFSgroup.fit.glm2))
+
+```
+
+
+```{r evaluating2, eval=T, echo=T}
+#spot check of models
+summary(results_fisrt_select)
+dotplot(results_fisrt_select)
+```
+
+I evaluated the performance of these models over the validation dataset to check if there was any tendency to overfit. I defined a function to expedite the calculation of the confusion matrix and obtain a summary of the results:
+
+```{r evaluating3, eval=F, echo=T}
+###Checking for possible overfitting of the models
+
+#defining a function to check performance with validation dataset
+validation_function <- function(x,y) {
+  predict_test <-predict(x, newdata=y)
+  a <- confusionMatrix(predict_test,y$Is_hit)
+  b<- data.frame(row.names = "results", acc = a$overall['Accuracy'],
+                 pval= a$overall['AccuracyPValue'],
+                 sen= a$byClass['Sensitivity'],
+                 spe = a$byClass['Specificity'],
+                 f1= a$byClass['F1'])
+  return(b)
+}
+
+#summarising results
+
+selected_models <- list(RF_type2=typegroup.fit.RF2,RF_AFS2=AFSgroup.fit.RF2,
+                        CART_type2=typegroup.fit.cart2, CART_AFS2=AFSgroup.fit.cart2,
+                        LG_AFS2=AFSgroup.fit.glm2)
+
+```
+
+The following results were noted:
+```{r evaluating4, eval=T, echo=T}
+#checking for overfitting:
+sapply(selected_models, validation_function, y = validation)
+```
+
+
+I noted that the Random Forest models were significantly over-fitted and not performing well for sensitivity.   Similarly the Cart for the type-group features was showing signals of overfitting and lower sensitivity than specificity.  Therefore I discarded these models.
+
+I selected the following models as they had higher accuracy and performed well in both sensitivity and specificity:
+
+* CART over automated selected features group.
+* Logistic Regression over automated selected features group.
+
+
+## Interpretation of individual final models selected
+
+**CART**
+
+The CART model created a binary tree by using two features:  genre and tempo, as noted below:
+```{r interpretation1, eval=T, echo=T}
+#plotting the tree produced by the Cart model:
+#AFS.CART
+rpart.plot(AFSgroup.fit.cart2$finalModel)
+```
+
+Interpretation has been a bit obscured due to data transformation. We applied "Preprocess = center" to the data in the processing of the models. This subtracts the mean of the predictor's data from each data point. We have also transformed the categorical variable "genre" to a numerical vector for ease of use in the model. 
+
+The tree starts indicating that classes are balanced ("No" represents 50% of the classes)
+
+The model performs a cutoff at certain genres and divides the population between hit (about 37% of the songs are classified as hits based on genre grouping) and the remaining 63% is further evaluated using the tempo feature.
+
+For tempo we know that the mean is 136.5: 
+```{r interpretation2, eval=T, echo=T}
+#Tempo mean
+mean(training$tempo)
+```
+
+Looking at the tree we can see that for this training dataset any songs that was not classified as a hit due to genre, and had a tempo above 103.5 (this is: -0.33 + 136.5), was classified as a hit, and represented 5% of the songs.  The remaining group was classified as non-hit (58%).  
+
+
+**LOGISTIC REGRESSION**
+
+Logistic regression models are based on the logistic function:
+
+$$\frac{1}{(1 + e^{-value})}$$  
+
+
+Where:
+
+ * e represents the base of the natural logarithms 
+ 
+ * value is the  numerical value that we  want to transform. 
+ 
+This can also be represented this way:
+ 
+ $$g(p) = log(\frac{p}{1−p})$$
+
+Our Logistic regression model has six predictor and can be represented as  follows:
+
+$$g\langle p(x1, x2...x6)\rangle = g\langle Pr(Y = 1 | X1 = x1,X2 = x2, \cdots, X6 = x6)\rangle = \beta0 + \beta1x1 + \beta2x2+ \cdots + \beta6x6$$
+
+
+Another way to look at it is:
+
+$$y =\frac {e^{(\beta0 + \beta1*X1 + \beta2*x2+ \cdots +\beta6*x6)}} {(1 + e^{(\beta0 + \beta1*X + \beta2*x2 + \cdots + \beta6*x6)})}$$
+
+Where:
+
+* x1 to x6 are the six predictors placed in our model.
+
+The Logistic Regression model summary provides a detail of the coefficients calculated for each variable:
+
+```{r interpretation3, eval=T, echo=T}
+#AFS.GLM
+summary(AFSgroup.fit.glm2)
+```
+
+Please note that p-values are very low, indicating that there is relationship between the target variable ("Is_hit") and the predictors (i.e. rejecting the null hypothesis that changes in the predictors have no effect in the target variable).
+
+In general, negative coefficients will indicate a decrease in the probability of the song being classified as a hit, when there is an increase in the predictor's value.  
+
+For example, an increase in loudness will lower the probability of the song being a hit more than the other predictors with negative coefficients:
+
+```{r interpretation4, eval=T, echo=T}
+#AFS.GLM
+#probability curve for loudness example
+training[,AFS_group_index]  %>%
+  mutate(prob = ifelse(Is_hit == "Yes", 1, 0)) %>%
+  ggplot(aes(loudness, prob)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) +
+  labs(
+    title = "Logistic Regression Model", 
+    x = "loudness",
+    y = "Probability of being hit song"
+  )
+```
+
+
+Positive coefficients indicate an increase in the probability of the song being classified as a hit, when there is an increase in the predictor's value.  
+
+An example is the duration feature. An increase on duration tends to increase the probability of the song being a hit, this need to be read carefully with the standard deviation as a sign of variability:
+
+```{r interpretation5, eval=T, echo=T}
+#AFS.GLM
+#probability curve for duration example
+training[,AFS_group_index]  %>%
+  mutate(prob = ifelse(Is_hit == "Yes", 1, 0)) %>%
+  ggplot(aes(duration_ms, prob)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth(method = "glm", method.args = list(family = "binomial")) +
+  labs(
+    title = "Logistic Regression Model", 
+    x = "song duration (centered)",
+    y = "Probability of being hit song"
+  )
+```
+
+In our exploratory analysis we noted that hit songs had a slightly higher duration than non-hit songs, and the classes seemed to have a normal distribution. Therefore, songs that are too long or too shorts are unlikely to be classified as hit under this model. 
+
+To aid on the understanding of genres, due to the data transformation, I decided to illustrate the probabilities of certain genres being associated with hit songs, by visualising the top 10 genres by class (in terms of number of songs), as follows:
+
+* grouping data and creating the layouts
+
+```{r interpretation6, eval=F, echo=T}
+###expanding on genres interpretation
+
+### visualization of Top15 genres by class
+Top_15_genre_hit <- by_genre_count %>% filter(Is_hit == 1) %>% arrange(desc(total_songs)) %>% head(15)
+
+Top_15_genre_non_hit <- by_genre_count %>% filter(Is_hit == 0) %>% arrange(desc(total_songs)) %>% head(15)
+
+
+# Generate the layout for Top_15_genre_hit
+packing <- circleProgressiveLayout(Top_15_genre_hit$total_songs, sizetype='area')
+packing$radius <- 0.95*packing$radius
+Top_15_genre_hit_pack <- cbind(Top_15_genre_hit, packing)
+Top_15_genre_hit_pack.gg <- circleLayoutVertices(packing, npoints=50)
+
+# Generate the layout for Top_15_genre_non_hit
+packing_nh <- circleProgressiveLayout(Top_15_genre_non_hit$total_songs, sizetype='area')
+packing_nh$radius <- 0.95*packing$radius
+Top_15_genre_non_hit_pack <- cbind(Top_15_genre_non_hit, packing_nh)
+Top_15_genre_non_hit_pack.gg <- circleLayoutVertices(packing_nh, npoints=50)
+
+```
+
+*displaying the Top-10 genres by hit songs:
+```{r interpretation7, eval=T, echo=T}
+# Plot Top_15_genre_hit
+ggplot() + 
+  geom_polygon(data = Top_15_genre_hit_pack.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  scale_fill_viridis() +
+  geom_text(data = Top_15_genre_hit_pack, aes(x, y, size=total_songs, label = genre_clean_factors), color="black") +
+  theme_void() + 
+  theme(legend.position="none")+ 
+  coord_equal()
+```
+
+*displaying the Top-10 genres by non-hit songs:
+```{r interpretation8, eval=T, echo=T}
+# Plot Top_15_genre_hit
+ggplot() + 
+  geom_polygon(data = Top_15_genre_non_hit_pack.gg, aes(x, y, group = id, fill=id), colour = "black", alpha = 0.6) +
+  scale_fill_viridis() +
+  geom_text(data = Top_15_genre_non_hit_pack, aes(x, y, size=total_songs, label = genre_clean_factors), color="black") +
+  theme_void() + 
+  theme(legend.position="none")+ 
+  coord_equal()
+
+```
+
+
+## Final model ensemble and evaluation
+
+Given that both models performed similarly, I explored an ensemble of these models to obtain an improved accuracy, while maintaining reasonable performance in sensitivity and specificity.
+
+I listed the two  models to ensemble with the following code:
+```{r ensemble1, eval=F, echo=T}
+#ensemble of two models selected
+
+model_list <- caretList(
+  Is_hit~., data=training[,AFS_group_index],
+  trControl=trainControl,
+  methodList=c("glm", "rpart")
+)
+
+```
+
+and checked whether models were correlated.  If  the models are correlated it means they are predicting mistakes in the same way, therefore it won't be useful to ensemble them.  However, the following code shows that the models have low correlation:
+
+```{r ensemble2, eval=T, echo=T}
+#checking  models correlation
+xyplot(resamples(model_list))
+
+modelCor(resamples(model_list))
+
+```
+ 
+The following code allowed me to ensemble the models:
+```{r ensemble3, eval=F, echo=T}
+#ensemble
+ensemble_ctrl <- trainControl(method = "repeatedcv", number = 10, repeats=3, returnResamp = "final", 
+                              savePredictions = "final",  classProbs = TRUE)
+
+final_model <- caretEnsemble(
+  model_list, 
+  metric="Accuracy",
+  trControl= ensemble_ctrl)
+
+```
+
+The new model produce a higher level of accuracy than the individual models:
+```{r ensemble4, eval=T, echo=T}
+#final model
+summary(final_model)
+
+```
+
+The following code demonstrates how the model assigns importance levels to each of the predictors:
+```{r ensemble5, eval=T, echo=T}
+#importance of predictors
+final_model_imp<- varImp(final_model)
+
+final_model_imp[order(final_model_imp$overall,decreasing=TRUE),]
+
+```
+
+Finally, I evaluated the model performance using the validation dataset and compared it with the performance of the individual models. We can see that the accuracy level has increased, while maintaining an acceptable level of performance with sensitivity and accuracy.
+
+```{r ensemble6, eval=T, echo=T}
+#evaluating models with validation dataset
+
+#final model
+validation_function(final_model ,validation)
+
+#individual models
+validation_function(AFSgroup.fit.cart2 ,validation)
+validation_function(AFSgroup.fit.glm2 ,validation)
+
+```
+
+
+## CONCLUSION AND LIMITATIONS
+
+The project aim was to predict a hit song based on its audio feature. This was a binary classification problem, with a base probability of 50% (affected by prevalence of the classes).  
+
+The analysis performed indicates that popular songs, which we call "hit songs" under the term of this project, share certain characteristics that allow for distinctions with non-hit songs.  
+
+The model indicates that the most relevant audio features to predict hit songs are:
+
+* genre 
+* tempo  
+* valence 
+* speechiness 
+* duration_ms 
+* loudness
+
+I was able to construct an model that provides an overall accuracy of approx. 91% while maintaining sensitivity and specificity over 88%.  
+
+To perform the analysis I have maintained the classes balanced.  The intention was to eliminate any influence that unbalanced classes could have on the modelling. However, the reality might differ significantly. By intuition we can say that there is a lower portion of successful songs in the total universe of songs composed.
+
+I am unable to assess that proportion as part of this study.  However, potentially this could be assessed by looking at sample proportions of other studies performed on hit/non-hot songs or taking several samples across populations of songs and averaging the proportion of successful songs.
+
+To test the efficacy of my final model, I sliced the validation dataset and created an arbitrary unbalanced test set (10% hits vs 90% non-hit songs) with the following code:
+
+```{r conclusion1, eval=F, echo=T}
+#testing final model on unbalanced dataset
+(set.seed = 75)
+validation_unbalanced_no <- validation %>% filter(Is_hit == "No") %>% sample_n(., 3000)
+validation_unbalanced_yes <- validation %>% filter(Is_hit == "Yes") %>% sample_n(., 300)
+
+validation_unbalanced <- rbind(validation_unbalanced_no, validation_unbalanced_yes) %>% arrange(.$track_id)
+
+```
+
+When testing the final model to the unbalanced dataset we can see that the level of accuracy increases and maintains an good levels of sensibility and specificity:
+
+```{r conclusion2, eval=T, echo=T}
+#testing algorithm in unbalanced population
+validation_function(final_model,validation_unbalanced)
+```
+
+**Other limitations and possible further work**
+
+We might be able to predict potential hit songs using these characteristics, but it does not imply causality (i.e. these audio features will not necessarily make the song a hit).  There could be other confounding factors that are driving the success of certain songs, which were not subject of my  analysis.
+
+To establish whether or not a causal relationship exists between the success of the song and its characteristics we would need to include data about those potential confounders (such as marketing, artist trajectory/ability, record company reputation, etc.) to control and account for its effect.
+
+The analysis can be expanded by looking at the characteristics of songs within specific genres to identify the audio features of hit songs for particular genres of interest. 
+
+Other features could be considered, for example genre is related to aspects such as specific instrumentation (selection of instruments included in a song), this could be a variable to add.  Other variables could be about the quality of the sound:  masterization and mix, etc.  This would require a measurement of these variables, which at the moment are not available in Spotify data.
+
+Analysis can also be expanded to include geographical, socioeconomic and or audience profile data to stratify further the preference of the public.  Also, we could study an specific period as it is expected that taste and preference would fluctuate over time.
+
+
