@@ -17,7 +17,7 @@ The repository includes the following files:
 
 IMPORTANT NOTES:
 
-For code to run properly you need to do one of the following methods:
+For code to run properly you need to do the following:
 
 A) Uploading main source data  files
 
