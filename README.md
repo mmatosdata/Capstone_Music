@@ -33,7 +33,9 @@ B) Spotify Performers data:
 Option 1- delete the Spotify processing lines and upload Performer data provided:
 
 a) Place file "no_hits_performers_sample" (located in zip file "source_data") in your working directory
+
 b) Delete line from 106 to 140 in the Rscript file called "Capstone_music_Code_final"
+
 c) Place the following code instead:
 
 no_hits_performers_sample <- read.csv("~/no_hits_performers_sample.csv")  # place your directory path if "~" does not work
