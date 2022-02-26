@@ -25,7 +25,7 @@ Place the relevant files in your working directory and review the path for the d
 
   * Hot_100_Audio_Features <- read.csv("~//Hot 100 Audio Features.csv")   # place your directory path if " ~ " does not work
  
-  * genres_v2 <- read.csv("~/genres_v2.csv") # place your directory path if "~" does not work
+  * genres_v2 <- read.csv("~/genres_v2.csv") # place your directory path if " ~ " does not work
 
 
 **B) Spotify Performers data:**
