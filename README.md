@@ -12,8 +12,9 @@ The repository includes the following files:
 
 - An Rmd file report detailing the methodology applied, 
 - A PDF report (issued from the Rmd file above mentioned), 
-- A Html version of the report, and 
-- An R script file that generates the analysis and  predictions
+- A Html version of the report
+- An R script file that generates the analysis and  predictions, and
+- source data used
 
 **IMPORTANT NOTES:**
 
