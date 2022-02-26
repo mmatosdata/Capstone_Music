@@ -15,11 +15,11 @@ The repository includes the following files:
 - A Html version of the report, and 
 - An R script file that generates the analysis and  predictions
 
-IMPORTANT NOTES:
+**IMPORTANT NOTES:**
 
 For code to run properly you need to do the following:
 
-A) Uploading main source data  files
+**A) Uploading main source data  files**
 
 Place the relevant files in your working directory and review the path for the datasets to upload in lines 23 and 24 (Rscript file "Capstone_music_Code_final"): 
 
@@ -28,9 +28,9 @@ Hot_100_Audio_Features <- read.csv("~//Hot 100 Audio Features.csv")  # place you
 genres_v2 <- read.csv("~/genres_v2.csv") # place your directory path if "~" does not work
 
 
-B) Spotify Performers data:
+**B) Spotify Performers data:**
 
-Option 1- delete the Spotify processing lines and upload Performer data provided:
+**Option 1**- delete the Spotify processing lines and upload Performer data provided:
 
 a) Place file "no_hits_performers_sample" (located in zip file "source_data") in your working directory
 
@@ -38,22 +38,20 @@ b) Delete line from 106 to 140 in the Rscript file called "Capstone_music_Code_f
 
 c) Place the following code instead:
 
-no_hits_performers_sample <- read.csv("~/no_hits_performers_sample.csv")  # place your directory path if "~" does not work
+   *no_hits_performers_sample <- read.csv("~/no_hits_performers_sample.csv")*  # place your directory path if " ~ " does not work
 
 
-Option 2- provide a Spotify ClientId and Client Secret (you need a Spotify account to obtain those):
+**Option 2** - provide a Spotify ClientId and Client Secret (you need a Spotify account to obtain those):
 
 In the Rscript file "Capstone_music_Code_final", add the definition of these element before line 106 as follows:
 
-Client_Id <- "your client Id"  #input your client id here
+  *Client_Id <- "your client Id"  #input your client id here
 
-Client_secret <- "your client secret"  #input your client secret here
+  *Client_secret <- "your client secret"  #input your client secret here
 
 See links for instructions on how to get your Client_id and Client secret:
 
 https://cran.r-project.org/web/packages/spotidy/vignettes/Connecting-with-the-Spotify-API.html#:~:text=Log%20in%20with%20your%20Spotify,unhide%20your%20'Client%20secret'.
 
 https://support.heateor.com/get-spotify-client-id-client-secret/
-
-
 
