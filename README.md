@@ -23,9 +23,9 @@ For code to run properly you need to do the following:
 
 Place the relevant files in your working directory and review the path for the datasets to upload in lines 23 and 24 (Rscript file "Capstone_music_Code_final"): 
 
-Hot_100_Audio_Features <- read.csv("~//Hot 100 Audio Features.csv")  # place your directory path if "~" does not work
+  * Hot_100_Audio_Features <- read.csv("~//Hot 100 Audio Features.csv")   # place your directory path if " ~ " does not work
  
-genres_v2 <- read.csv("~/genres_v2.csv") # place your directory path if "~" does not work
+  * genres_v2 <- read.csv("~/genres_v2.csv") # place your directory path if "~" does not work
 
 
 **B) Spotify Performers data:**
@@ -38,16 +38,16 @@ b) Delete line from 106 to 140 in the Rscript file called "Capstone_music_Code_f
 
 c) Place the following code instead:
 
-   *no_hits_performers_sample <- read.csv("~/no_hits_performers_sample.csv")*  # place your directory path if " ~ " does not work
+   * no_hits_performers_sample <- read.csv("~/no_hits_performers_sample.csv")*  # place your directory path if " ~ " does not work
 
 
 **Option 2** - provide a Spotify ClientId and Client Secret (you need a Spotify account to obtain those):
 
 In the Rscript file "Capstone_music_Code_final", add the definition of these element before line 106 as follows:
 
-  *Client_Id <- "your client Id"  #input your client id here
+  * Client_Id <- "your client Id"  #input your client id here
 
-  *Client_secret <- "your client secret"  #input your client secret here
+  * Client_secret <- "your client secret"  #input your client secret here
 
 See links for instructions on how to get your Client_id and Client secret:
 
