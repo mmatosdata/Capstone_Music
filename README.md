@@ -56,3 +56,25 @@ https://cran.r-project.org/web/packages/spotidy/vignettes/Connecting-with-the-Sp
 
 https://support.heateor.com/get-spotify-client-id-client-secret/
 
+
+**REFERENCES**
+
+The following material was used a reference:
+
+* [EDX course material](https://rafalab.github.io/dsbook/)
+
+* [Caret Package – A Practical Guide to Machine Learning in R](https://www.machinelearningplus.com/machine-learning/caret-package/#4howtovisualizetheimportanceofvariablesusingfeatureplot)
+
+* [Boruta package](https://cran.r-project.org/web/packages/Boruta/Boruta.pdf) 
+
+* [Machine learning masstery with R](https://machinelearningmastery.com/machine-learning-with-r/)
+
+* [R-Gallery](https://www.r-graph-gallery.com/)
+
+* [Data source: Hot 100 Billboard songs](https://data.world/kcmillersean/billboard-hot-100-1958-2017)
+
+* [Data source: Dataset of songs in Spotify](https://www.kaggle.com/mrmorj/dataset-of-songs-in-spotify)
+
+
+
+
