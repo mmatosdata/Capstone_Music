@@ -67,7 +67,7 @@ The following material was used a reference:
 
 * [Boruta package](https://cran.r-project.org/web/packages/Boruta/Boruta.pdf) 
 
-* [Machine learning masstery with R](https://machinelearningmastery.com/machine-learning-with-r/)
+* [Machine learning mastery with R](https://machinelearningmastery.com/machine-learning-with-r/)
 
 * [R-Gallery](https://www.r-graph-gallery.com/)
 
