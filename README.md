@@ -65,6 +65,8 @@ The following material was used a reference:
 
 * [Caret Package – A Practical Guide to Machine Learning in R](https://www.machinelearningplus.com/machine-learning/caret-package/#4howtovisualizetheimportanceofvariablesusingfeatureplot)
 
+* [Spotifyr package](https://www.rdocumentation.org/packages/spotifyr/versions/2.2.3)
+
 * [Boruta package](https://cran.r-project.org/web/packages/Boruta/Boruta.pdf) 
 
 * [Machine learning mastery with R](https://machinelearningmastery.com/machine-learning-with-r/)
