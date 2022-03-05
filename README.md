@@ -59,7 +59,7 @@ https://support.heateor.com/get-spotify-client-id-client-secret/
 
 **REFERENCES**
 
-The following material was used a reference:
+The following material was used as reference:
 
 * [EDX course material](https://rafalab.github.io/dsbook/)
 
